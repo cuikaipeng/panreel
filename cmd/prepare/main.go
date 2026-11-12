@@ -70,21 +70,8 @@ func prepare(targets string) error {
 			return err
 		}
 	}
-	head, _ := exec.Command("git", "-C", source, "rev-parse", "HEAD").Output()
-	if strings.TrimSpace(string(head)) != revision {
-		if err = run(source, nil, "git", "fetch", "--depth", "1", "origin", revision); err != nil {
-			return err
-		}
-		if strings.TrimSpace(string(head)) != "" {
-			// Generated desktop patches are reapplied below. Retire
-			// them before moving the cache to a different upstream revision.
-			if err = run(source, nil, "git", "restore", "--source=HEAD", "--", "main.go", "config/config.go", "plugin/plugin.go", "service/search_service.go"); err != nil {
-				return err
-			}
-		}
-		if err = run(source, nil, "git", "checkout", "--detach", revision); err != nil {
-			return err
-		}
+	if err = checkoutRevision(source, revision); err != nil {
+		return err
 	}
 	main, err := exec.Command("git", "-C", source, "show", revision+":main.go").Output()
 	if err != nil {
