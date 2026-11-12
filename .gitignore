@@ -1,0 +1,36 @@
+# Local tools and build products
+/.cache/
+/.mygo/
+/build/
+/work/
+/outputs/
+/node_modules/
+/.pnpm-store/
+/resources/darwin-*/bin/
+/resources/windows-*/bin/
+*.test
+*.exe
+*.syso
+
+# Personal configuration and credentials
+.env*
+*.pem
+*.p12
+*.pfx
+*.p8
+*.key
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+*.log.*
+/.agents/
+/.codex/
+.DS_Store
+pnpm-debug.log*
+.pnpm-debug.log*
+
+/.local/
+mygo-update.key
+/test-artifacts/

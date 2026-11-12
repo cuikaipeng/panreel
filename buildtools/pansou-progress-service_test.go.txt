@@ -1,0 +1,121 @@
+package service
+
+import (
+    "errors"
+    "net/http"
+    "sync"
+    "sync/atomic"
+    "testing"
+    "time"
+
+    "pansou/config"
+    "pansou/model"
+    "pansou/plugin"
+)
+
+type desktopFixturePlugin struct {
+    *plugin.BaseAsyncPlugin
+    gate <-chan struct{}
+    calls atomic.Int32
+    finalAPI, fail bool
+}
+
+func (p *desktopFixturePlugin) Search(keyword string, ext map[string]interface{}) ([]model.SearchResult, error) {
+    work := func(_ *http.Client, keyword string, _ map[string]interface{}) ([]model.SearchResult, error) {
+        p.calls.Add(1)
+        if p.gate != nil { <-p.gate }
+        if p.fail { return nil, errors.New("fixture source unavailable") }
+        return []model.SearchResult{{UniqueID: p.Name(), Title: keyword, Channel: p.Name(),
+            Links: []model.Link{{Type: "quark", URL: "https://pan.quark.cn/s/" + p.Name()}}}}, nil
+    }
+    if p.finalAPI {
+        result, err := p.AsyncSearchWithResult(keyword, work, "", ext)
+        return result.Results, err
+    }
+    return p.AsyncSearch(keyword, work, "", ext)
+}
+
+func TestPanReelProgressIncludesLateCacheWrites(t *testing.T) {
+    for _, mode := range []string{"async", "final-api", "failure"} {
+        t.Run(mode, func(t *testing.T) {
+            savedConfig, savedCache, savedInitialized := config.AppConfig, enhancedTwoLevelCache, cacheInitialized
+            config.AppConfig = &config.Config{
+                CachePath: t.TempDir(), CacheMaxSizeMB: 10, CacheEnabled: true,
+                CacheTTLMinutes: 60, CachePartialTTLMinutes: 3, AsyncPluginEnabled: true, AsyncCacheTTLHours: 1,
+                AsyncResponseTimeoutDur: 20*time.Millisecond, PluginTimeout: time.Second,
+                PluginBatchTimeout: time.Second, DefaultConcurrency: 2,
+            }
+            enhancedTwoLevelCache, cacheInitialized = nil, false
+            gate := make(chan struct{})
+            var release sync.Once
+            var keys []string
+            t.Cleanup(func() {
+                release.Do(func() { close(gate) })
+                deadline := time.Now().Add(2*time.Second)
+                for plugin.DesktopPending(keys) && time.Now().Before(deadline) { time.Sleep(time.Millisecond) }
+                config.AppConfig, enhancedTwoLevelCache, cacheInitialized = savedConfig, savedCache, savedInitialized
+            })
+            pm := plugin.NewPluginManager()
+            fast := &desktopFixturePlugin{BaseAsyncPlugin: plugin.NewBaseAsyncPlugin("panreelfast", 1)}
+            slow := &desktopFixturePlugin{BaseAsyncPlugin: plugin.NewBaseAsyncPlugin("panreelslow", 1), gate: gate, finalAPI: mode == "final-api", fail: mode == "failure"}
+            pm.RegisterPlugin(fast)
+            pm.RegisterPlugin(slow)
+            svc := NewSearchService(pm)
+            req := model.SearchRequest{Keyword: "PanReel " + mode, SourceType: "plugin", Plugins: []string{"PANREELFAST", "PANREELSLOW"}, Ext: map[string]interface{}{"pages": 2}}
+            keys = svc.desktopCacheKeys(req)
+            first, err := svc.Search(req.Keyword, nil, 2, true, "merged_by_type", req.SourceType, req.Plugins, nil, req.Ext)
+            if err != nil || first.Total != 1 { t.Fatalf("first batch = %+v, %v", first, err) }
+            initialCalls := fast.calls.Load()
+            for i := 0; i < 4; i++ {
+                snapshot, pending, err := svc.DesktopSnapshot(req)
+                if err != nil || !pending || snapshot.Total > 1 { t.Fatalf("slow work incorrectly complete: %+v %v %v", snapshot, pending, err) }
+            }
+            other := req
+            other.Keyword = "another search"
+            if _, pending, _ := svc.DesktopSnapshot(other); pending { t.Fatal("unrelated keyword inherited progress") }
+            other = req
+            other.Ext = map[string]interface{}{"pages": 9}
+            if _, pending, _ := svc.DesktopSnapshot(other); pending { t.Fatal("unrelated parameters inherited progress") }
+            release.Do(func() { close(gate) })
+            deadline := time.Now().Add(2*time.Second)
+            for {
+                snapshot, pending, err := svc.DesktopSnapshot(req)
+                if err != nil { t.Fatal(err) }
+                if !pending {
+                    want := 2
+                    if mode == "failure" { want = 1 }
+                    if snapshot.Total != want {
+                        data, hit, _ := enhancedTwoLevelCache.Get(keys[0])
+                        var raw []model.SearchResult
+                        decodeErr := enhancedTwoLevelCache.GetSerializer().Deserialize(data, &raw)
+                        t.Fatalf("final cache write lost: got %d, want %d; key=%s hit=%v raw=%+v decode=%v", snapshot.Total, want, keys[0], hit, raw, decodeErr)
+                    }
+                    break
+                }
+                if time.Now().After(deadline) { t.Fatal("progress never completed") }
+                time.Sleep(time.Millisecond)
+            }
+            if fast.calls.Load() != initialCalls { t.Fatal("snapshot started another search") }
+        })
+    }
+}
+
+func TestPanReelProgressTracksTGAndNestedWork(t *testing.T) {
+    svc := &SearchService{}
+    req := model.SearchRequest{Keyword: "TG test", SourceType: "tg", Channels: []string{"example"}}
+    keys := svc.desktopCacheKeys(req)
+    // Exercise the same registration-before-launch used by TG backfill jobs.
+    first := plugin.DesktopBegin(keys[0])
+    gate, started := make(chan struct{}), make(chan struct{})
+    plugin.DesktopGo(keys[0], func() { close(started); <-gate })
+    <-started
+    first()
+    if !plugin.DesktopPending(keys) { t.Fatal("nested background work was lost") }
+    if plugin.DesktopPending([]string{"another-cache-key"}) { t.Fatal("source scopes were conflated") }
+    close(gate)
+    deadline := time.Now().Add(time.Second)
+    for plugin.DesktopPending(keys) {
+        if time.Now().After(deadline) { t.Fatal("work entry leaked") }
+        time.Sleep(time.Millisecond)
+    }
+}

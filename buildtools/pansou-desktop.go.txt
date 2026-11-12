@@ -1,0 +1,45 @@
+// PanReel desktop adapter. Applied to a pinned upstream build, not an upstream fork.
+package main
+
+import (
+    "crypto/subtle"
+    "encoding/json"
+    "io"
+    "net/http"
+    "os"
+    "syscall"
+    "pansou/api"
+)
+
+const desktopRevision = "PANREEL_ENGINE_REVISION"
+
+func desktopHandler(next http.Handler) http.Handler {
+    token := os.Getenv("PANREEL_TOKEN")
+    if token == "" { return next }
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        if r.URL.Path == "/api/panreel" {
+            w.Header().Set("Content-Type", "application/json")
+            _ = json.NewEncoder(w).Encode(map[string]any{"protocol": 1, "revision": desktopRevision, "search_updates": true})
+            return
+        }
+        if r.URL.Path == "/api/panreel/search/snapshot" {
+            api.DesktopSnapshotHandler(w, r)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+// The app owns the write end of stdin. Normal exit or a crash closes it on
+// macOS and Windows, so the helper also exits if its parent disappears.
+func watchDesktopLifetime(quit chan os.Signal) {
+    if os.Getenv("PANREEL_MANAGED") != "1" { return }
+    go func() {
+        _, _ = io.Copy(io.Discard, os.Stdin)
+        select { case quit <- syscall.SIGTERM: default: }
+    }()
+}

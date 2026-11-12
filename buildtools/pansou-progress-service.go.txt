@@ -1,0 +1,66 @@
+package service
+
+import (
+    "strings"
+    "pansou/config"
+    "pansou/model"
+    "pansou/plugin"
+    "pansou/util"
+    "pansou/util/cache"
+)
+
+// Search's task closures name their local plugin variable "plugin".
+func desktopBeginWork(key string) func() { return plugin.DesktopBegin(key) }
+
+// DesktopSnapshot only reads caches; polling never starts another search.
+func (s *SearchService) DesktopSnapshot(req model.SearchRequest) (model.SearchResponse, bool, error) {
+    keys := s.desktopCacheKeys(req)
+    // Sample before reading: observing no work guarantees that the final cache
+    // writes precede this snapshot. Sampling afterwards could lose the last batch.
+    pending := plugin.DesktopPending(keys)
+    var all []model.SearchResult
+    if enhancedTwoLevelCache != nil {
+        for _, key := range keys {
+            data, hit, err := enhancedTwoLevelCache.Get(key)
+            if err != nil { return model.SearchResponse{}, pending, err }
+            if !hit { continue }
+            var results []model.SearchResult
+            if err = enhancedTwoLevelCache.GetSerializer().Deserialize(data, &results); err != nil {
+                return model.SearchResponse{}, pending, err
+            }
+            all = mergeSearchResults(all, results)
+        }
+    }
+    sortResultsByTimeAndKeywords(all)
+    links := mergeResultsByType(all, req.Keyword, req.CloudTypes)
+    total := 0
+    for _, group := range links { total += len(group) }
+    return model.SearchResponse{Total: total, MergedByType: links}, pending, nil
+}
+
+func (s *SearchService) desktopCacheKeys(req model.SearchRequest) []string {
+    source := req.SourceType
+    if source == "" { source = "all" }
+    var keys []string
+    if source == "all" || source == "tg" {
+        channels := req.Channels
+        if len(channels) == 0 { channels = config.AppConfig.DefaultChannels }
+        keys = append(keys, cache.GenerateTGCacheKey(req.Keyword, channels))
+    }
+    if (source == "all" || source == "plugin") && config.AppConfig.AsyncPluginEnabled {
+        // Match Search's canonical representation of an explicitly selected
+        // full plugin registry, including case-insensitive plugin names.
+        plugins := req.Plugins
+        requested := make(map[string]bool)
+        count := 0
+        for _, name := range plugins {
+            if name != "" { requested[strings.ToLower(name)] = true; count++ }
+        }
+        all := s.pluginManager.GetPlugins()
+        full := count == len(all)
+        for _, p := range all { full = full && requested[strings.ToLower(p.Name())] }
+        if count == 0 || full { plugins = nil }
+        keys = append(keys, cache.GeneratePluginCacheKey(req.Keyword, plugins, util.ExtDigest(req.Ext)))
+    }
+    return keys
+}

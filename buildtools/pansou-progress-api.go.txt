@@ -1,0 +1,36 @@
+package api
+
+import (
+    "encoding/json"
+    "net/http"
+    "strings"
+    "unicode/utf8"
+    "pansou/model"
+)
+
+// Called behind the desktop adapter's per-process bearer authentication.
+func DesktopSnapshotHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        w.Header().Set("Allow", http.MethodPost)
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req model.SearchRequest
+    body := http.MaxBytesReader(w, r.Body, maxSearchRequestBodyBytes)
+    if json.NewDecoder(body).Decode(&req) != nil || strings.TrimSpace(req.Keyword) == "" ||
+        utf8.RuneCountInString(req.Keyword) > 100 || channelsOverLimit(len(req.Channels)) {
+        http.Error(w, "Invalid search request", http.StatusBadRequest)
+        return
+    }
+    result, pending, err := searchService.DesktopSnapshot(req)
+    if err != nil {
+        http.Error(w, "Could not read search results", http.StatusInternalServerError)
+        return
+    }
+    if req.Filter != nil { result = applyResultFilter(result, req.Filter, "merged_by_type") }
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(model.NewSuccessResponse(struct {
+        model.SearchResponse
+        Pending bool `json:"pending"`
+    }{result, pending}))
+}

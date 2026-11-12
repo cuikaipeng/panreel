@@ -1,0 +1,123 @@
+name: Desktop checks and installers
+
+on:
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            engines: darwin/arm64,darwin/amd64
+            platform: darwin/universal
+            artifact: macos-universal
+          - os: windows-latest
+            engines: windows/amd64
+            platform: windows/amd64
+            artifact: windows-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: '0'
+      GOFLAGS: -buildvcs=false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check versions
+        run: go run ./cmd/package -check
+      - name: Test native views and domain logic
+        run: go test ./...
+      - name: Static checks
+        run: go vet ./...
+      - name: MyGo UI checks
+        run: go tool mygo vet ./internal/app
+      - name: Prepare bundled engines
+        run: go run ./cmd/prepare -platform ${{ matrix.engines }}
+      - name: Verify reviewed third-party notices
+        run: go run ./cmd/licenses -check
+      - name: Check application and engine vulnerabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+          GOFLAGS='-buildvcs=false -modfile=../../../buildtools/pansou.mod -mod=readonly' GOTOOLCHAIN=go1.27.4 govulncheck -C .cache/pansou/source .
+      - name: Verify real engine catalog and lifecycle
+        env:
+          PANREEL_ENGINE_TEST: '1'
+        run: go test -count=1 -v ./internal/engine ./internal/app
+      - name: Build test installers
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: go run ./cmd/package -platform ${{ matrix.platform }}
+      - name: Build signed update assets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: go run ./cmd/package -platform '${{ matrix.platform }}' -require-key -tag "$RELEASE_TAG"
+      - name: Preserve distribution artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: panreel-${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            build/**/*.dmg
+            build/**/panreel-setup-*.exe
+            build/**/panreel-*.tar.gz
+            build/**/update-*.json
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: panreel-*
+          path: build/release
+          merge-multiple: true
+      - name: Assemble release directory
+        shell: bash
+        run: |
+          mkdir -p build/release-flat
+          find build/release -type f -exec cp {} build/release-flat/ \;
+      - name: Verify signatures and checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: go run ./cmd/package -tag "$RELEASE_TAG" -verify build/release-flat
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          test -f "docs/releases/$RELEASE_TAG.md"
+          if gh release view "$RELEASE_TAG" --json isDraft > build/existing-release.json 2> build/release-error.txt; then
+            python3 -c 'import json; assert json.load(open("build/existing-release.json"))["isDraft"], "Published releases must not be replaced"'
+            gh release upload "$RELEASE_TAG" build/release-flat/* --clobber
+          else
+            if ! grep -qi 'not found\|HTTP 404' build/release-error.txt; then cat build/release-error.txt; exit 1; fi
+            gh release create "$RELEASE_TAG" build/release-flat/* --draft --verify-tag --title "PanReel $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+          fi

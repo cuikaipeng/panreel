@@ -1,0 +1,256 @@
+{
+  "revision": "221665fb2c9279f22af4684ea2d8c0c331eac1cc",
+  "plugins": [
+    {
+      "id": "488run"
+    },
+    {
+      "id": "5266ys"
+    },
+    {
+      "id": "aipan"
+    },
+    {
+      "id": "btbtlb"
+    },
+    {
+      "id": "buerchen"
+    },
+    {
+      "id": "cldi"
+    },
+    {
+      "id": "clmao"
+    },
+    {
+      "id": "clxiong"
+    },
+    {
+      "id": "cyg"
+    },
+    {
+      "id": "diduan"
+    },
+    {
+      "id": "djgou"
+    },
+    {
+      "id": "duanjuw"
+    },
+    {
+      "id": "duoduo"
+    },
+    {
+      "id": "dy4k"
+    },
+    {
+      "id": "dygang"
+    },
+    {
+      "id": "dyyj"
+    },
+    {
+      "id": "dyyjpro"
+    },
+    {
+      "id": "erxiaopan"
+    },
+    {
+      "id": "feikuai"
+    },
+    {
+      "id": "gaoqing888"
+    },
+    {
+      "id": "gying",
+      "env": [
+        "CACHE_PATH",
+        "GYING_ENCRYPTION_KEY",
+        "GYING_HASH_SALT"
+      ]
+    },
+    {
+      "id": "haitunsou"
+    },
+    {
+      "id": "hdmoli"
+    },
+    {
+      "id": "hjzhencai"
+    },
+    {
+      "id": "huban"
+    },
+    {
+      "id": "hunhepan"
+    },
+    {
+      "id": "ikantv"
+    },
+    {
+      "id": "jsnoteclub"
+    },
+    {
+      "id": "jutoushe"
+    },
+    {
+      "id": "kkv"
+    },
+    {
+      "id": "kpkuang"
+    },
+    {
+      "id": "labi"
+    },
+    {
+      "id": "leso"
+    },
+    {
+      "id": "libvio"
+    },
+    {
+      "id": "lingjisp"
+    },
+    {
+      "id": "lou1"
+    },
+    {
+      "id": "meitizy"
+    },
+    {
+      "id": "melost"
+    },
+    {
+      "id": "miosou"
+    },
+    {
+      "id": "muou"
+    },
+    {
+      "id": "nsgame"
+    },
+    {
+      "id": "nyaa"
+    },
+    {
+      "id": "ouge"
+    },
+    {
+      "id": "pan365"
+    },
+    {
+      "id": "panlian",
+      "env": [
+        "CACHE_PATH",
+        "PANLIAN_ENCRYPTION_KEY",
+        "PANLIAN_HASH_SALT"
+      ]
+    },
+    {
+      "id": "pansearch"
+    },
+    {
+      "id": "qiwei"
+    },
+    {
+      "id": "qqpd",
+      "env": [
+        "CACHE_PATH",
+        "QQPD_ENCRYPTION_KEY",
+        "QQPD_HASH_SALT"
+      ]
+    },
+    {
+      "id": "quark4k"
+    },
+    {
+      "id": "quarkres"
+    },
+    {
+      "id": "quarksoo"
+    },
+    {
+      "id": "quarktv"
+    },
+    {
+      "id": "rrbt"
+    },
+    {
+      "id": "shandian"
+    },
+    {
+      "id": "sopanya"
+    },
+    {
+      "id": "sousou"
+    },
+    {
+      "id": "susu"
+    },
+    {
+      "id": "thepiratebay"
+    },
+    {
+      "id": "ting77"
+    },
+    {
+      "id": "u3c3"
+    },
+    {
+      "id": "wanou"
+    },
+    {
+      "id": "weibo",
+      "env": [
+        "CACHE_PATH",
+        "WEIBO_HASH_SALT"
+      ]
+    },
+    {
+      "id": "woniu",
+      "env": [
+        "CACHE_PATH",
+        "WONIU_HASH_SALT"
+      ]
+    },
+    {
+      "id": "xb6v"
+    },
+    {
+      "id": "xdpan"
+    },
+    {
+      "id": "xiaokupan"
+    },
+    {
+      "id": "xiaoyu"
+    },
+    {
+      "id": "xiaozhang"
+    },
+    {
+      "id": "yingso"
+    },
+    {
+      "id": "yulinshufa",
+      "env": [
+        "YULINSHUFA_DEBUG"
+      ]
+    },
+    {
+      "id": "yunso"
+    },
+    {
+      "id": "yunsou"
+    },
+    {
+      "id": "zhizhen"
+    },
+    {
+      "id": "zlxapp"
+    },
+    {
+      "id": "zxzj"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "panreel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PanReel native desktop app — optional pnpm task aliases",
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "dev": "go run ./cmd/prepare && go tool mygo dev",
+    "build": "go run ./cmd/package",
+    "build:all": "go run ./cmd/package -platform darwin/universal,windows/amd64",
+    "engine:prepare": "go run ./cmd/prepare",
+    "test": "go test ./...",
+    "check": "go vet ./... && go tool mygo vet ./internal/app",
+    "format": "gofmt -w cmd internal",
+    "icon": "go run ./cmd/icon",
+    "release:check": "go run ./cmd/package -check",
+    "test:race": "go test -race ./..."
+  }
+}

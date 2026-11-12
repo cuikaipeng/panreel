@@ -1,0 +1,36 @@
+// PanReel desktop progress tracking. Entries exist only while work is active.
+package plugin
+
+import "sync"
+
+var desktopWork = struct {
+    sync.Mutex
+    pending map[string]int
+}{pending: make(map[string]int)}
+
+func DesktopBegin(key string) func() {
+    desktopWork.Lock()
+    desktopWork.pending[key]++
+    desktopWork.Unlock()
+    return func() {
+        desktopWork.Lock()
+        desktopWork.pending[key]--
+        if desktopWork.pending[key] == 0 { delete(desktopWork.pending, key) }
+        desktopWork.Unlock()
+    }
+}
+
+// Register before starting the goroutine, so a reader cannot miss queued work.
+func DesktopGo(key string, work func()) {
+    done := DesktopBegin(key)
+    go func() { defer done(); work() }()
+}
+
+func DesktopPending(keys []string) bool {
+    desktopWork.Lock()
+    defer desktopWork.Unlock()
+    for _, key := range keys {
+        if desktopWork.pending[key] > 0 { return true }
+    }
+    return false
+}

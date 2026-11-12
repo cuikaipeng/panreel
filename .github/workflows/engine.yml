@@ -1,0 +1,103 @@
+name: Independent PanSou engine updates
+
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pansou-engine-channel
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    outputs:
+      changed: ${{ steps.upstream.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Check upstream commit
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=$(git ls-remote https://github.com/fish2018/pansou.git HEAD | cut -f1)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          previous=''
+          if curl --fail --location --max-time 30 --silent --show-error https://github.com/cuikaipeng/panreel/releases/download/pansou-engine/engine-update.json -o previous-engine.json; then
+            previous=$(python3 -c 'import json; print(json.load(open("previous-engine.json"))["payload"]["revision"])')
+          fi
+          if [ "$revision" != "$previous" ] || [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build desktop-adapted engines
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          UPSTREAM_REVISION: ${{ steps.upstream.outputs.revision }}
+          GOFLAGS: -buildvcs=false
+        run: go run ./cmd/prepare -revision "$UPSTREAM_REVISION" -platform darwin/arm64,darwin/amd64,windows/amd64
+      - name: Verify protocol, empty channels and process lifetime
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          PANREEL_ENGINE_TEST: '1'
+        run: go test -count=1 ./internal/engine ./internal/model ./internal/search ./internal/engineupdate
+      - name: Verify reviewed licenses and assemble archives
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          go run ./cmd/licenses -check
+          go run ./cmd/engine-release
+      - name: Check engine vulnerabilities before publication
+        if: steps.upstream.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          GOFLAGS='-buildvcs=false -modfile=../../../buildtools/pansou.mod -mod=readonly' GOTOOLCHAIN=go1.27.4 govulncheck -C .cache/pansou/source .
+      - uses: actions/upload-artifact@v7
+        if: steps.upstream.outputs.changed == 'true'
+        with:
+          name: engine-unsigned
+          path: build/engine-release/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-unsigned
+          path: build/engine-release
+      - name: Verify and sign without executing upstream code
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: go run ./cmd/engine-release -sign
+      - name: Publish engine channel separately from application releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view pansou-engine; then
+            gh release create pansou-engine --target "$GITHUB_SHA" --latest=false --title 'PanSou engine channel' --notes 'Signed desktop engine updates for PanReel. This is not an application installer.'
+          fi
+          gh release upload pansou-engine build/engine-release/*.tar.gz --clobber
+          gh release upload pansou-engine build/engine-release/engine-update.json --clobber

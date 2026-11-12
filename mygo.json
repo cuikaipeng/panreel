@@ -1,0 +1,25 @@
+{
+  "name": "PanReel",
+  "slug": "panreel",
+  "identifier": "app.panreel.desktop",
+  "version": "0.1.0",
+  "main": "./cmd/panreel",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "13.0",
+    "infoPlist": {
+      "CFBundleDevelopmentRegion": "en",
+      "CFBundleLocalizations": ["en", "zh-Hans"]
+    }
+  },
+  "windows": {
+    "displayName": "PanReel",
+    "installDirName": "PanReel"
+  },
+  "icon": "resources/icon.png",
+  "updates": {
+    "github": "cuikaipeng/panreel",
+    "publicKey": "AH62F0dxidF1AEa4gvGGovK+In8DZoHWCbPbZWkKn4I=",
+    "deltas": 0
+  }
+}
